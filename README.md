@@ -36,7 +36,7 @@ import (
 
 func main() {
 	// Initialize the Metrics Manager
-	mm := metrics.NewMetricsManager("metrics.json", 30, time.Minute)
+	mm := metrics.NewMetricsManager("metrics.json", 30, 10 * time.Minute)
 
 	// Use it to track your metrics!
 }
@@ -44,7 +44,7 @@ func main() {
 
 - `"metrics.json"`: File path for saving metrics.
 - `30`: Number of days to retain metrics.
-- `time.Minute`: Interval for automatically saving metrics to disk.
+- `10 * time.Minute`: Interval for automatically saving metrics to disk.
 
 ---
 
