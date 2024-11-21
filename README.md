@@ -1,18 +1,23 @@
+Here is the updated README, reflecting the change to use `5 * time.Minute` as the save interval:
+
+---
+
 # go-metrics
 
-**go-metrics** is a simple and lightweight Go library for managing, storing, and querying metrics. Designed for ease of use, it provides atomic operations, customizable persistence, and advanced querying capabilities that work seamlessly across different time zones.
+**go-metrics** is a simple and lightweight Go library for tracking, storing, and querying metrics over time. With its intuitive API and timezone-aware queries, it is ideal for applications that need reliable and efficient metric management.
 
 ---
 
 ## Features
 
-- **Lightweight and Simple**: Focused on providing an intuitive interface to track and query metrics.
-- **Atomic Operations**: Safely increment, decrement, or adjust metrics, even in concurrent environments.
-- **Time-Based Grouping**: Metrics are grouped by hour or day for easy reporting and analysis.
-- **Persistence**: Automatically saves metrics to disk in JSON format, ensuring durability.
-- **Timezone-Aware Queries**: Retrieve metrics for the last N hours or days, respecting your preferred timezone.
-- **Dynamic Metric Creation**: Metrics are created on-the-fly, no need for pre-definition.
-- **Signal Handling**: Ensures metrics are saved before termination when receiving system signals like `SIGINT` or `SIGTERM`.
+- **Lightweight and Simple**: Designed for ease of use and quick integration into your projects.
+- **Atomic Operations**: Safely increment, decrement, or adjust metric values, even in concurrent environments.
+- **Time-Based Grouping**: Metrics are grouped by hour or day for granular tracking and analysis.
+- **Persistence**: Metrics are automatically saved to a JSON file and reloaded at startup.
+- **Error Handling**: Handles corrupted files gracefully by resetting metrics while logging the issue.
+- **Timezone-Aware Queries**: Retrieve metrics for specific time ranges, respecting your preferred timezone.
+- **Dynamic Metric Creation**: Automatically creates metrics when they are first used.
+- **Signal Handling**: Ensures metrics are saved before termination when receiving signals like `SIGINT` or `SIGTERM`.
 
 ---
 
@@ -36,7 +41,11 @@ import (
 
 func main() {
 	// Initialize the Metrics Manager
-	mm := metrics.NewMetricsManager("metrics.json", 30, 10 * time.Minute)
+	mm, err := metrics.NewMetricsManager("metrics.json", 30, 5*time.Minute)
+	if err != nil {
+		fmt.Printf("Error initializing MetricsManager: %v\n", err)
+		return
+	}
 
 	// Use it to track your metrics!
 }
@@ -44,7 +53,7 @@ func main() {
 
 - `"metrics.json"`: File path for saving metrics.
 - `30`: Number of days to retain metrics.
-- `10 * time.Minute`: Interval for automatically saving metrics to disk.
+- `5 * time.Minute`: Interval for automatically saving metrics to disk.
 
 ---
 
@@ -170,19 +179,19 @@ Example:
 ## Advanced Features
 
 1. **Atomic Operations**:
-    - Increment and decrement values safely in concurrent environments using atomic operations.
+   - Increment and decrement values safely in concurrent environments using atomic operations.
 
 2. **Timezone-Aware Queries**:
-    - Queries like `GetMetricsForLastDays` and `GetMetricsForLastHours` allow metrics to be retrieved with respect to specific time zones.
+   - Queries like `GetMetricsForLastDays` and `GetMetricsForLastHours` allow metrics to be retrieved with respect to specific time zones.
 
 3. **Dynamic Metric Creation**:
-    - Metrics are created dynamically when `Increment`, `Decrement`, or related methods are called.
+   - Metrics are created dynamically when `Increment`, `Decrement`, or related methods are called.
 
 4. **Automatic Cleanup**:
-    - Removes old metrics beyond the configured `maxDays`.
+   - Removes old metrics beyond the configured `maxDays`.
 
 5. **Signal Handling**:
-    - Ensures metrics are saved before program termination.
+   - Ensures metrics are saved before program termination.
 
 ---
 
@@ -199,8 +208,12 @@ import (
 )
 
 func main() {
-	// Initialize Metrics Manager with 30-days of retention and save interval of 5 minutes
-	mm := metrics.NewMetricsManager("metrics.json", 30, 5 * time.Minute)
+	// Initialize Metrics Manager
+	mm, err := metrics.NewMetricsManager("metrics.json", 30, 5*time.Minute)
+	if err != nil {
+		fmt.Printf("Error initializing MetricsManager: %v\n", err)
+		return
+	}
 
 	// Track metrics
 	mm.Increment("requests")
@@ -236,5 +249,3 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for detai
 ## Contributing
 
 Contributions are welcome! Feel free to open issues or submit pull requests to enhance the functionality of **go-metrics**.
-
-
