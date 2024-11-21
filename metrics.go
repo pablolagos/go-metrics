@@ -24,8 +24,10 @@ type MetricsManager struct {
 	saveInterval time.Duration
 }
 
+var ErrCorruptedFile = fmt.Errorf("corrupted metrics file")
+
 // NewMetricsManager initializes the MetricsManager with persistence settings.
-func NewMetricsManager(filePath string, maxDays int, saveInterval time.Duration) *MetricsManager {
+func NewMetricsManager(filePath string, maxDays int, saveInterval time.Duration) (*MetricsManager, error) {
 	mm := &MetricsManager{
 		metrics:      make(map[time.Time]*Metric),
 		filePath:     filePath,
@@ -36,7 +38,7 @@ func NewMetricsManager(filePath string, maxDays int, saveInterval time.Duration)
 	// Attempt to load metrics from the file system on initialization.
 	err := mm.loadMetrics()
 	if err != nil {
-		fmt.Printf("Warning: Unable to load metrics from file. Starting fresh. Error: %v\n", err)
+		return nil, fmt.Errorf("failed to load metrics: %v", err)
 	}
 
 	// Start periodic saving of metrics to ensure persistence.
@@ -45,7 +47,7 @@ func NewMetricsManager(filePath string, maxDays int, saveInterval time.Duration)
 	// Set up signal handling to save metrics on process termination.
 	go mm.handleSignals()
 
-	return mm
+	return mm, nil
 }
 
 // Increment increases the value of a specified metric atomically.
@@ -121,6 +123,17 @@ func (mm *MetricsManager) cleanupOldMetrics() {
 
 // loadMetrics loads metrics from a JSON file on disk.
 func (mm *MetricsManager) loadMetrics() error {
+	// create file if not exists
+	if _, err := os.Stat(mm.filePath); os.IsNotExist(err) {
+		mm.metrics = make(map[time.Time]*Metric)
+		err := mm.saveMetrics()
+		if err != nil {
+			return fmt.Errorf("cannot create metrics file: %v", err)
+		}
+		return nil
+	}
+
+	// open and read file
 	file, err := os.Open(mm.filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -134,7 +147,7 @@ func (mm *MetricsManager) loadMetrics() error {
 	decoder := json.NewDecoder(file)
 	if err := decoder.Decode(&mm.metrics); err != nil {
 		mm.metrics = make(map[time.Time]*Metric)
-		return fmt.Errorf("failed to decode metrics file: %v", err)
+		return fmt.Errorf("failed to decode metrics file: %v", ErrCorruptedFile)
 	}
 	return nil
 }
