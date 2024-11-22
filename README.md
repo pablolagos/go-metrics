@@ -1,7 +1,3 @@
-Here is the updated README, reflecting the change to use `5 * time.Minute` as the save interval:
-
----
-
 # go-metrics
 
 **go-metrics** is a simple and lightweight Go library for tracking, storing, and querying metrics over time. With its intuitive API and timezone-aware queries, it is ideal for applications that need reliable and efficient metric management.
@@ -14,10 +10,9 @@ Here is the updated README, reflecting the change to use `5 * time.Minute` as th
 - **Atomic Operations**: Safely increment, decrement, or adjust metric values, even in concurrent environments.
 - **Time-Based Grouping**: Metrics are grouped by hour or day for granular tracking and analysis.
 - **Persistence**: Metrics are automatically saved to a JSON file and reloaded at startup.
-- **Error Handling**: Handles corrupted files gracefully by resetting metrics while logging the issue.
 - **Timezone-Aware Queries**: Retrieve metrics for specific time ranges, respecting your preferred timezone.
 - **Dynamic Metric Creation**: Automatically creates metrics when they are first used.
-- **Signal Handling**: Ensures metrics are saved before termination when receiving signals like `SIGINT` or `SIGTERM`.
+- **Custom Signal Handling**: The program using the library manages signals and decides when to call `SaveMetrics`.
 
 ---
 
@@ -149,6 +144,59 @@ for _, value := range values {
 
 ---
 
+### 4. **Handle Signals in Your Program**
+
+The program is responsible for handling OS signals and calling `SaveMetrics` when needed.
+
+```go
+import (
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/pablolagos/go-metrics"
+)
+
+func main() {
+	// Initialize Metrics Manager
+	mm, err := metrics.NewMetricsManager("metrics.json", 30, 5*time.Minute)
+	if err != nil {
+		fmt.Printf("Error initializing MetricsManager: %v\n", err)
+		return
+	}
+
+	// Simulate some metric activity
+	go func() {
+		for i := 0; i < 10; i++ {
+			mm.Increment("requests")
+			time.Sleep(time.Second)
+		}
+	}()
+
+	// Handle OS signals at the end of the program
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
+
+	sig := <-signalChan
+	fmt.Printf("Received signal: %s. Saving metrics...\n", sig)
+
+	// Save metrics before exiting
+	if err := mm.SaveMetrics(); err != nil {
+		fmt.Printf("Error saving metrics: %v\n", err)
+	} else {
+		fmt.Println("Metrics saved successfully.")
+	}
+
+	fmt.Println("Exiting.")
+	os.Exit(0)
+}
+
+```
+
+---
+
 ## JSON Structure
 
 Metrics are saved in JSON format, with timestamps as keys and counters grouped within.
@@ -190,54 +238,6 @@ Example:
 4. **Automatic Cleanup**:
    - Removes old metrics beyond the configured `maxDays`.
 
-5. **Signal Handling**:
-   - Ensures metrics are saved before program termination.
-
----
-
-## Example Program
-
-```go
-package main
-
-import (
-	"fmt"
-	"time"
-
-	"github.com/pablolagos/go-metrics"
-)
-
-func main() {
-	// Initialize Metrics Manager
-	mm, err := metrics.NewMetricsManager("metrics.json", 30, 5*time.Minute)
-	if err != nil {
-		fmt.Printf("Error initializing MetricsManager: %v\n", err)
-		return
-	}
-
-	// Track metrics
-	mm.Increment("requests")
-	mm.IncrementBy("requests", 5)
-	mm.Decrement("errors")
-	mm.DecrementBy("errors", 2)
-
-	// Retrieve metrics for the last 2 days
-	location, _ := time.LoadLocation("UTC")
-	metrics, _ := mm.GetMetricsForLastDays(2, location)
-	fmt.Println("Metrics for the last 2 days:")
-	for _, metric := range metrics {
-		fmt.Printf("Date: %s, Counters: %+v\n", metric.Date.Format("2006-01-02"), metric.Counters)
-	}
-
-	// Retrieve specific metric values for the last 24 hours
-	values, _ := mm.GetMetricValuesForLastHours("requests", 24, location)
-	fmt.Println("\nRequests for the last 24 hours:")
-	for _, value := range values {
-		fmt.Printf("Hour: %s, Value: %d\n", value.Date.Format("2006-01-02 15:00"), value.Value)
-	}
-}
-```
-
 ---
 
 ## License
@@ -249,3 +249,7 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for detai
 ## Contributing
 
 Contributions are welcome! Feel free to open issues or submit pull requests to enhance the functionality of **go-metrics**.
+
+---
+
+This updated README ensures users understand how to handle signals and call `SaveMetrics` when needed. Let me know if further clarification or additions are required! 😊

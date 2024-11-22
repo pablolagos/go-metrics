@@ -4,10 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/signal"
 	"sort"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -43,9 +41,6 @@ func NewMetricsManager(filePath string, maxDays int, saveInterval time.Duration)
 
 	// Start periodic saving of metrics to ensure persistence.
 	go mm.startSaving()
-
-	// Set up signal handling to save metrics on process termination.
-	go mm.handleSignals()
 
 	return mm, nil
 }
@@ -126,7 +121,7 @@ func (mm *MetricsManager) loadMetrics() error {
 	// create file if not exists
 	if _, err := os.Stat(mm.filePath); os.IsNotExist(err) {
 		mm.metrics = make(map[time.Time]*Metric)
-		err := mm.saveMetrics()
+		err := mm.SaveMetrics()
 		if err != nil {
 			return fmt.Errorf("cannot create metrics file: %v", err)
 		}
@@ -152,8 +147,8 @@ func (mm *MetricsManager) loadMetrics() error {
 	return nil
 }
 
-// saveMetrics saves metrics to a JSON file on disk.
-func (mm *MetricsManager) saveMetrics() error {
+// SaveMetrics saves metrics to a JSON file on disk.
+func (mm *MetricsManager) SaveMetrics() error {
 	mm.mu.RLock()
 	defer mm.mu.RUnlock()
 
@@ -173,23 +168,9 @@ func (mm *MetricsManager) startSaving() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		err := mm.saveMetrics()
+		err := mm.SaveMetrics()
 		if err != nil {
 			fmt.Printf("Error saving metrics: %v\n", err)
-		}
-	}
-}
-
-// handleSignals intercepts OS signals to save metrics before process termination.
-func (mm *MetricsManager) handleSignals() {
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-
-	for sig := range signalChan {
-		fmt.Printf("Received signal: %s, saving metrics...\n", sig)
-		err := mm.saveMetrics()
-		if err != nil {
-			fmt.Printf("Error saving metrics on signal: %v\n", err)
 		}
 	}
 }
