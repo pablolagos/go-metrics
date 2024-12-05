@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
 	"sync"
 	"time"
 )
@@ -180,20 +179,33 @@ func (mm *MetricsManager) GetMetricsForLastDays(days int, location *time.Locatio
 	mm.mu.RLock()
 	defer mm.mu.RUnlock()
 
-	now := time.Now().In(location)
-	cutoff := now.AddDate(0, 0, -days).Truncate(24 * time.Hour)
+	now := time.Now().In(location).Truncate(24 * time.Hour)
+	cutoff := now.AddDate(0, 0, -days)
 
-	var result []Metric
-	for date, metric := range mm.metrics {
-		metricTime := date.In(location).Truncate(24 * time.Hour)
-		if metricTime.After(cutoff) || metricTime.Equal(cutoff) {
-			result = append(result, *metric)
+	// Create a complete list of metrics with counters initialized to 0
+	result := make([]Metric, 0, days)
+	for i := 0; i < days; i++ {
+		date := cutoff.AddDate(0, 0, i)
+		metricDate := date.UTC()
+
+		metric, exists := mm.metrics[metricDate]
+		if !exists {
+			// Create an empty metric with all counters initialized to 0
+			metric = &Metric{
+				Date:     metricDate,
+				Counters: mm.initializeZeroCounters(),
+			}
+		} else {
+			// Fill missing counters with values initialized to 0
+			for key := range mm.getAllKnownKeys() {
+				if _, ok := metric.Counters[key]; !ok {
+					metric.Counters[key] = &AtomicInt64{}
+				}
+			}
 		}
-	}
 
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Date.Before(result[j].Date)
-	})
+		result = append(result, *metric)
+	}
 
 	return result, nil
 }
@@ -203,20 +215,51 @@ func (mm *MetricsManager) GetMetricsForLastHours(hours int, location *time.Locat
 	mm.mu.RLock()
 	defer mm.mu.RUnlock()
 
-	now := time.Now().In(location)
+	now := time.Now().In(location).Truncate(time.Hour)
 	cutoff := now.Add(-time.Duration(hours) * time.Hour)
 
-	var result []Metric
-	for date, metric := range mm.metrics {
-		metricTime := date.In(location)
-		if metricTime.After(cutoff) || metricTime.Equal(cutoff) {
-			result = append(result, *metric)
+	// Create a complete list of metrics with counters initialized to 0
+	result := make([]Metric, 0, hours)
+	for i := 0; i < hours; i++ {
+		date := cutoff.Add(time.Duration(i) * time.Hour)
+		metricDate := date.UTC()
+
+		metric, exists := mm.metrics[metricDate]
+		if !exists {
+			// Create an empty metric with all counters initialized to 0
+			metric = &Metric{
+				Date:     metricDate,
+				Counters: mm.initializeZeroCounters(),
+			}
+		} else {
+			// Fill missing counters with values initialized to 0
+			for key := range mm.getAllKnownKeys() {
+				if _, ok := metric.Counters[key]; !ok {
+					metric.Counters[key] = &AtomicInt64{}
+				}
+			}
 		}
+
+		result = append(result, *metric)
 	}
 
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Date.Before(result[j].Date)
-	})
-
 	return result, nil
+}
+
+func (mm *MetricsManager) initializeZeroCounters() map[string]*AtomicInt64 {
+	counters := make(map[string]*AtomicInt64)
+	for key := range mm.getAllKnownKeys() {
+		counters[key] = &AtomicInt64{}
+	}
+	return counters
+}
+
+func (mm *MetricsManager) getAllKnownKeys() map[string]struct{} {
+	keys := make(map[string]struct{})
+	for _, metric := range mm.metrics {
+		for key := range metric.Counters {
+			keys[key] = struct{}{}
+		}
+	}
+	return keys
 }
