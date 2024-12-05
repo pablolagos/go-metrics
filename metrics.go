@@ -182,29 +182,47 @@ func (mm *MetricsManager) GetMetricsForLastDays(days int, location *time.Locatio
 	now := time.Now().In(location).Truncate(24 * time.Hour)
 	cutoff := now.AddDate(0, 0, -days)
 
-	// Create a complete list of metrics with counters initialized to 0
-	result := make([]Metric, 0, days)
-	for i := 0; i < days; i++ {
-		date := cutoff.AddDate(0, 0, i)
-		metricDate := date.UTC()
+	// Map to store aggregated daily metrics
+	dailyMetrics := make(map[time.Time]*Metric)
 
-		metric, exists := mm.metrics[metricDate]
-		if !exists {
-			// Create an empty metric with all counters initialized to 0
-			metric = &Metric{
-				Date:     metricDate,
-				Counters: mm.initializeZeroCounters(),
-			}
-		} else {
-			// Fill missing counters with values initialized to 0
-			for key := range mm.getAllKnownKeys() {
-				if _, ok := metric.Counters[key]; !ok {
-					metric.Counters[key] = &AtomicInt64{}
-				}
+	// Aggregate metrics by day
+	for metricDate, metric := range mm.metrics {
+		// Convert the metric date to the requested timezone and truncate to the day
+		metricDay := metricDate.In(location).Truncate(24 * time.Hour)
+
+		// Ignore metrics outside the range
+		if metricDay.Before(cutoff) || metricDay.After(now) {
+			continue
+		}
+
+		// Initialize daily metric if not already present
+		if _, exists := dailyMetrics[metricDay]; !exists {
+			dailyMetrics[metricDay] = &Metric{
+				Date:     metricDay,
+				Counters: mm.initializeZeroCounters(), // Initialize all known counters to 0
 			}
 		}
 
-		result = append(result, *metric)
+		// Aggregate counters for the day
+		for key, counter := range metric.Counters {
+			dailyMetrics[metricDay].Counters[key].Add(counter.Load())
+		}
+	}
+
+	// Fill missing days with zeroed metrics
+	result := make([]Metric, 0, days)
+	for i := 0; i < days; i++ {
+		day := cutoff.AddDate(0, 0, i)
+
+		if dailyMetric, exists := dailyMetrics[day]; exists {
+			result = append(result, *dailyMetric)
+		} else {
+			// Create a zeroed metric for missing days
+			result = append(result, Metric{
+				Date:     day.UTC(),
+				Counters: mm.initializeZeroCounters(),
+			})
+		}
 	}
 
 	return result, nil
