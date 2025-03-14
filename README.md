@@ -249,7 +249,3 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for detai
 ## Contributing
 
 Contributions are welcome! Feel free to open issues or submit pull requests to enhance the functionality of **go-metrics**.
-
----
-
-This updated README ensures users understand how to handle signals and call `SaveMetrics` when needed. Let me know if further clarification or additions are required! 😊
