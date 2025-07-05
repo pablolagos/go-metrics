@@ -233,7 +233,7 @@ func (mm *MetricsManager) GetMetricsForLastHours(hours int, location *time.Locat
 	mm.mu.RLock()
 	defer mm.mu.RUnlock()
 
-	now := time.Now().In(location).Truncate(time.Hour)
+	now := time.Now().Add(59999 * time.Millisecond).In(location).Truncate(time.Hour)
 	cutoff := now.Add(-time.Duration(hours) * time.Hour)
 
 	// Create a complete list of metrics with counters initialized to 0
