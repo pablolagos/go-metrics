@@ -179,7 +179,7 @@ func (mm *MetricsManager) GetMetricsForLastDays(days int, location *time.Locatio
 	mm.mu.RLock()
 	defer mm.mu.RUnlock()
 
-	now := time.Now().In(location).Truncate(24 * time.Hour)
+	now := time.Now().In(location).AddDate(0, 0, 1).Truncate(24 * time.Hour)
 	cutoff := now.AddDate(0, 0, -days)
 
 	// Map to store aggregated daily metrics
