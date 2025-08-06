@@ -3,6 +3,7 @@ package go_metrics
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"sync"
 	"time"
@@ -19,6 +20,7 @@ type MetricsManager struct {
 	filePath     string
 	maxDays      int
 	saveInterval time.Duration
+	now          func() time.Time // Current time for reference
 }
 
 var ErrCorruptedFile = fmt.Errorf("corrupted metrics file")
@@ -30,6 +32,7 @@ func NewMetricsManager(filePath string, maxDays int, saveInterval time.Duration)
 		filePath:     filePath,
 		maxDays:      maxDays,
 		saveInterval: saveInterval,
+		now:          time.Now, // Default to the real current time
 	}
 
 	// Attempt to load metrics from the file system on initialization.
@@ -175,53 +178,53 @@ func (mm *MetricsManager) startSaving() {
 }
 
 // GetMetricsForLastDays retrieves metrics for the last `days` in the specified timezone.
-func (mm *MetricsManager) GetMetricsForLastDays(days int, location *time.Location) ([]Metric, error) {
+func (mm *MetricsManager) GetMetricsForLastDays(days int, loc *time.Location) ([]Metric, error) {
 	mm.mu.RLock()
 	defer mm.mu.RUnlock()
 
-	now := time.Now().In(location).AddDate(0, 0, 1).Truncate(24 * time.Hour)
-	cutoff := now.AddDate(0, 0, -days)
+	// 1) Compute today's midnight in the local timezone
+	nowLocal := time.Now().In(loc)
+	todayMidnight := time.Date(
+		nowLocal.Year(), nowLocal.Month(), nowLocal.Day(),
+		0, 0, 0, 0,
+		loc,
+	)
 
-	// Map to store aggregated daily metrics
-	dailyMetrics := make(map[time.Time]*Metric)
+	// 2) Build slice of local midnights for each of the last 'days'
+	localDays := make([]time.Time, days)
+	for i := 0; i < days; i++ {
+		// localDays[0] = today - (days-1), ..., localDays[days-1] = today
+		localDays[days-1-i] = todayMidnight.AddDate(0, 0, -i)
+	}
 
-	// Aggregate metrics by day
-	for metricDate, metric := range mm.metrics {
-		// Convert the metric date to the requested timezone and truncate to the day
-		metricDay := metricDate.In(location).Truncate(24 * time.Hour)
-
-		// Ignore metrics outside the range
-		if metricDay.Before(cutoff) || metricDay.After(now) {
-			continue
-		}
-
-		// Initialize daily metric if not already present
-		if _, exists := dailyMetrics[metricDay]; !exists {
-			dailyMetrics[metricDay] = &Metric{
-				Date:     metricDay,
-				Counters: mm.initializeZeroCounters(), // Initialize all known counters to 0
-			}
-		}
-
-		// Aggregate counters for the day
-		for key, counter := range metric.Counters {
-			dailyMetrics[metricDay].Counters[key].Add(counter.Load())
+	// 3) Initialize result array with zeroed counters
+	result := make([]Metric, days)
+	for i, dayStart := range localDays {
+		result[i] = Metric{
+			Date:     dayStart,
+			Counters: mm.initializeZeroCounters(),
 		}
 	}
 
-	// Fill missing days with zeroed metrics
-	result := make([]Metric, 0, days)
-	for i := 0; i < days; i++ {
-		day := cutoff.AddDate(0, 0, i)
-
-		if dailyMetric, exists := dailyMetrics[day]; exists {
-			result = append(result, *dailyMetric)
-		} else {
-			// Create a zeroed metric for missing days
-			result = append(result, Metric{
-				Date:     day.UTC(),
-				Counters: mm.initializeZeroCounters(),
-			})
+	// 4) Aggregate existing metrics
+	for utcKey, mtr := range mm.metrics {
+		// Convert the UTC-keyed timestamp into local time
+		localTs := utcKey.In(loc)
+		// Truncate to local midnight
+		dayStart := time.Date(
+			localTs.Year(), localTs.Month(), localTs.Day(),
+			0, 0, 0, 0,
+			loc,
+		)
+		// Find matching slot and accumulate
+		for i, ds := range localDays {
+			if ds.Equal(dayStart) {
+				for k, cnt := range mtr.Counters {
+					log.Printf("Adding %d to %s on %s", cnt.Load(), k, ds)
+					result[i].Counters[k].Add(cnt.Load())
+				}
+				break
+			}
 		}
 	}
 
@@ -229,35 +232,48 @@ func (mm *MetricsManager) GetMetricsForLastDays(days int, location *time.Locatio
 }
 
 // GetMetricsForLastHours retrieves metrics for the last `hours` in the specified timezone.
-func (mm *MetricsManager) GetMetricsForLastHours(hours int, location *time.Location) ([]Metric, error) {
+func (mm *MetricsManager) GetMetricsForLastHours(hours int, loc *time.Location) ([]Metric, error) {
 	mm.mu.RLock()
 	defer mm.mu.RUnlock()
 
-	now := time.Now().Add(59999 * time.Millisecond).In(location).Truncate(time.Hour)
-	cutoff := now.Add(-time.Duration(hours) * time.Hour)
+	// 1) Compute start of the current hour in local time
+	nowLocal := time.Now().In(loc)
+	currentLocalHour := time.Date(
+		nowLocal.Year(), nowLocal.Month(), nowLocal.Day(),
+		nowLocal.Hour(), 0, 0, 0,
+		loc,
+	)
 
-	// Create a complete list of metrics with counters initialized to 0
-	result := make([]Metric, 0, hours)
+	// 2) Build slice of local hour starts
+	localHours := make([]time.Time, hours)
 	for i := 0; i < hours; i++ {
-		date := cutoff.Add(time.Duration(i) * time.Hour)
-		metricDate := date.UTC()
+		localHours[hours-1-i] = currentLocalHour.Add(
+			-time.Duration(i) * time.Hour,
+		)
+	}
 
-		metric, exists := mm.metrics[metricDate]
+	// 3) Prepare results, initialize zeros
+	result := make([]Metric, 0, hours)
+	for _, hourStart := range localHours {
+		// Convert to UTC key for lookup
+		keyUTC := hourStart.UTC()
+		metric, exists := mm.metrics[keyUTC]
 		if !exists {
-			// Create an empty metric with all counters initialized to 0
+			// create empty
 			metric = &Metric{
-				Date:     metricDate,
+				Date:     hourStart, // keep in local
 				Counters: mm.initializeZeroCounters(),
 			}
 		} else {
-			// Fill missing counters with values initialized to 0
-			for key := range mm.getAllKnownKeys() {
-				if _, ok := metric.Counters[key]; !ok {
-					metric.Counters[key] = &AtomicInt64{}
+			// fill missing counters
+			for k := range mm.getAllKnownKeys() {
+				if _, ok := metric.Counters[k]; !ok {
+					metric.Counters[k] = &AtomicInt64{}
 				}
 			}
+			// override Date to local hour
+			metric.Date = hourStart
 		}
-
 		result = append(result, *metric)
 	}
 
