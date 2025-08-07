@@ -157,8 +157,3 @@ func toInt64(s string) int64 {
 	}
 	return val
 }
-
-// TestGetMetricsForLastDaysAcrossTimezones verifies aggregation works when local days differ across zones.
-func TestGetMetricsForLastDaysAcrossTimezones(t *testing.T) {
-
-}

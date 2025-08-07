@@ -183,7 +183,7 @@ func (mm *MetricsManager) GetMetricsForLastDays(days int, loc *time.Location) ([
 	defer mm.mu.RUnlock()
 
 	// 1) Compute today's midnight in the local timezone
-	nowLocal := time.Now().In(loc)
+	nowLocal := mm.now().In(loc)
 	todayMidnight := time.Date(
 		nowLocal.Year(), nowLocal.Month(), nowLocal.Day(),
 		0, 0, 0, 0,

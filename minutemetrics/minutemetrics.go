@@ -1,4 +1,4 @@
-package tsmetrics
+package minutemetrics
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -491,18 +492,16 @@ func (mm *MinuteMetricManager) GetMetricValuesLastDays(key string, n int, loc *t
 }
 
 const (
-	MaxCounterValue   = 4294967295
-	OverflowThreshold = 0.9
+	MaxCounterValue uint64 = math.MaxUint64
+	Threshold              = MaxCounterValue - 1000000 // Threshold to detect probable overflow
 )
 
 // CalculateCounterIncrease is a helper function to compute the increase in a counter-value, handling potential overflows.
 func (mm *MinuteMetricManager) CalculateCounterIncrease(previous, current uint64) uint64 {
-	thresholdValue := uint64(float64(MaxCounterValue) * OverflowThreshold)
-
 	var delta uint64
 	if current >= previous {
 		delta = current - previous
-	} else if previous >= thresholdValue {
+	} else if previous >= Threshold {
 		// Probable overflow del contador
 		delta = (MaxCounterValue - previous) + current + 1
 	} else {
